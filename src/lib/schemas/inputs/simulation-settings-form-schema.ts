@@ -7,6 +7,7 @@ export const simulationSettingsSchema = z
   .object({
     simulationSeed: coerceNumber(z.number().positive('Seed must be greater than 0').max(99999, 'Seed must be less than or equal to 99999')),
     simulationMode: z.enum(simulationModes),
+    acaOptimization: z.boolean().default(false),
     withdrawalStrategy: z.enum(['proportional', 'taxEfficient']).default('proportional'),
     historicalStartYearOverride: optionalCoerceNumber(
       z.number().min(1928, 'Year cannot be before 1928').max(2024, 'Year cannot be after 2024')

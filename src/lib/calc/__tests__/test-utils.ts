@@ -305,7 +305,7 @@ export const createSimulatorInputs = (overrides?: Partial<SimulatorInputs>): Sim
   marketAssumptions: overrides?.marketAssumptions ?? createDefaultMarketAssumptions(),
   taxSettings: overrides?.taxSettings ?? { filingStatus: 'single' },
   privacySettings: overrides?.privacySettings ?? { isPrivate: true },
-  simulationSettings: overrides?.simulationSettings ?? { simulationSeed: 12345, simulationMode: 'fixedReturns', withdrawalStrategy: 'proportional' },
+  simulationSettings: overrides?.simulationSettings ?? { simulationSeed: 12345, simulationMode: 'fixedReturns', acaOptimization: false, withdrawalStrategy: 'proportional' },
   glidePath: overrides?.glidePath,
 });
 

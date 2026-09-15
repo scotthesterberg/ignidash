@@ -119,9 +119,10 @@ export class FinancialSimulationEngine {
       contributionRules,
       this.inputs.glidePath,
       this.inputs.simulationSettings.withdrawalStrategy,
+      this.inputs.simulationSettings.acaOptimization,
       this.inputs.taxSettings.filingStatus
     );
-    const taxProcessor = new TaxProcessor(simulationState, this.inputs.taxSettings.filingStatus);
+    const taxProcessor = new TaxProcessor(simulationState, this.inputs.taxSettings.filingStatus, this.inputs.taxSettings.state);
 
     // Init phase identifier
     const phaseIdentifier = new PhaseIdentifier(simulationState, timeline);

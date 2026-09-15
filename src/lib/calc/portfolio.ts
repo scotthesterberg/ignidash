@@ -52,6 +52,10 @@ interface WithdrawalOrderItem {
 
 const DEFAULT_ASSET_ALLOCATION = { stocks: 0.6, bonds: 0.4, cash: 0 };
 
+const ACA_FPL_BASE = 15060;
+const ACA_FPL_PER_PERSON = 5380;
+
+
 const zeroFlows = zeroAssetAmounts<AssetFlows>;
 const addFlows = addAssetAmounts<AssetFlows>;
 
@@ -69,6 +73,7 @@ export class PortfolioProcessor {
     private contributionRules: ContributionRules,
     private glidePath?: GlidePathInputs,
     private withdrawalStrategy: 'proportional' | 'taxEfficient' = 'proportional',
+    private acaOptimization: boolean = false,
     private filingStatus: FilingStatus = 'single'
   ) {
     this.initialAssetAllocation = this.simulationState.portfolio.getWeightedAssetAllocation();
@@ -418,6 +423,7 @@ export class PortfolioProcessor {
       return withdrawnInThisStep;
     };
 
+    
     if (this.withdrawalStrategy === 'taxEfficient') {
       // 1. Savings
       withdrawFromAccounts([{ type: 'savings' }]);
@@ -426,18 +432,27 @@ export class PortfolioProcessor {
       withdrawFromAccounts([{ type: 'taxableBrokerage' }]);
 
       // 3. Tax-Deferred Fill
-      // Approximate annual taxable income: we just take a simple approach based on age or assume 0 for now.
-      // Wait, we need to know the brackets.
       const standardDeduction = STANDARD_DEDUCTION[this.filingStatus];
       const brackets = TAX_BRACKETS[this.filingStatus];
-      // Let's assume taxable income is currently 0 to simplify, or maybe RMDs contribute.
-      // If we don't have exact taxable income tracking in PortfolioProcessor, we'll assume we can fill the 12% bracket
-      // A typical strategy fills up to the 12% or 22% bracket. Let's fill up to the first bracket (10% / 12% ?).
-      // We will fill up to the end of the 12% bracket for this year as an approximation.
-      // 12% bracket max for married is 94300. Plus standard deduction 29200 = 123500 total room.
-      // We withdraw up to that room divided by 12 (monthly).
-      const roomInBracket = brackets[1].max + standardDeduction;
-      const monthlyRoom = roomInBracket / 12;
+      
+      let annualRoom = 0;
+      
+      if (this.acaOptimization && this.simulationState.time.age < 65) {
+        // Optimize for ACA subsidies (Target 200% FPL to balance tax-deferred drawdown with high subsidies)
+        // Assume household size 1 for single, 2 for married/HoH as a simplified default if not provided
+        const householdSize = this.filingStatus === 'single' ? 1 : 2; 
+        const fpl = ACA_FPL_BASE + ACA_FPL_PER_PERSON * (householdSize - 1);
+        const targetMagi = fpl * 2.0; // 200% FPL
+        
+        // The room we have for tax-deferred withdrawals is the target MAGI.
+        // We divide by 12 for the monthly allowance.
+        annualRoom = targetMagi;
+      } else {
+        // Default tax-efficient: fill up to the 12% bracket
+        annualRoom = brackets[1].max + standardDeduction;
+      }
+      
+      const monthlyRoom = annualRoom / 12;
 
       withdrawFromAccounts([{ type: '401k' }, { type: '403b' }, { type: 'ira' }], monthlyRoom);
 
@@ -447,6 +462,7 @@ export class PortfolioProcessor {
       // 5. If still deficit, pull from tax-deferred again
       withdrawFromAccounts([{ type: '401k' }, { type: '403b' }, { type: 'ira' }]);
     } else {
+
       const withdrawalOrder = this.getWithdrawalOrder();
       withdrawFromAccounts(withdrawalOrder.map((item) => ({ type: item.accountType, modifier: item.modifier })));
     }

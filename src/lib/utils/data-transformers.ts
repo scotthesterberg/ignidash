@@ -86,7 +86,7 @@ export function baseContributionFromConvex(baseContribution: Doc<'plans'>['baseC
 }
 
 export function taxSettingsFromConvex(taxSettings: Doc<'plans'>['taxSettings']): TaxSettingsInputs {
-  return { filingStatus: taxSettings.filingStatus };
+  return { filingStatus: taxSettings.filingStatus, state: taxSettings.state, householdSize: taxSettings.householdSize };
 }
 
 export function privacySettingsFromConvex(privacySettings: Doc<'plans'>['privacySettings']): PrivacySettingsInputs {
@@ -97,6 +97,7 @@ export function simulationSettingsFromConvex(simulationSettings: Doc<'plans'>['s
   return {
     ...simulationSettings,
     withdrawalStrategy: simulationSettings.withdrawalStrategy ?? 'proportional',
+    acaOptimization: simulationSettings.acaOptimization ?? false,
   };
 }
 
@@ -264,7 +265,7 @@ export function baseContributionToConvex(baseContribution: BaseContributionInput
 }
 
 export function taxSettingsToConvex(taxSettings: TaxSettingsInputs): Doc<'plans'>['taxSettings'] {
-  return { filingStatus: taxSettings.filingStatus };
+  return { filingStatus: taxSettings.filingStatus, state: taxSettings.state, householdSize: taxSettings.householdSize };
 }
 
 export function privacySettingsToConvex(privacySettings: PrivacySettingsInputs): Doc<'plans'>['privacySettings'] {

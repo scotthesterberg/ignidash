@@ -16,7 +16,9 @@ import Card from '@/components/ui/card';
 import { Field, FieldGroup, Fieldset, Label, Description, ErrorMessage } from '@/components/catalyst/fieldset';
 import ErrorMessageCard from '@/components/ui/error-message-card';
 import { Select } from '@/components/catalyst/select';
+import { STATE_TAX_DATA } from '@/lib/calc/tax-data/state-tax-brackets';
 import { Divider } from '@/components/catalyst/divider';
+import NumberInput from '@/components/ui/number-input';
 import { Button } from '@/components/catalyst/button';
 import { DialogActions } from '@/components/catalyst/dialog';
 import { useSelectedPlanId } from '@/hooks/use-selected-plan-id';
@@ -34,6 +36,7 @@ export default function TaxSettingsDrawer({ setOpen, taxSettings }: TaxSettingsD
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
@@ -79,6 +82,38 @@ export default function TaxSettingsDrawer({ setOpen, taxSettings }: TaxSettingsD
                   </Select>
                   {errors.filingStatus && <ErrorMessage>{errors.filingStatus?.message}</ErrorMessage>}
                   <Description>Your filing status determines your tax rates and standard deduction.</Description>
+                </Field>
+                <Divider />
+                <Field>
+                  <Label htmlFor="state">State of Residence</Label>
+                  <Select {...register('state')} id="state" name="state">
+                    <option value="">None (Federal Only)</option>
+                    {Object.keys(STATE_TAX_DATA).map((stateCode) => (
+                      <option key={stateCode} value={stateCode}>
+                        {stateCode}
+                      </option>
+                    ))}
+                  </Select>
+                  {errors.state && <ErrorMessage>{errors.state?.message}</ErrorMessage>}
+                  <Description>Used to estimate state income and capital gains taxes.</Description>
+                </Field>
+                <Divider />
+                <Field>
+                  <Label htmlFor="householdSize">Household Size</Label>
+                  <NumberInput
+                    name="householdSize"
+                    control={control}
+                    id="householdSize"
+                    inputMode="numeric"
+                    placeholder="1"
+                    decimalScale={0}
+                    step={1}
+                    min={1}
+                    max={15}
+                    disableThousandsSeparator
+                  />
+                  {errors.householdSize && <ErrorMessage>{errors.householdSize?.message}</ErrorMessage>}
+                  <Description>Used for ACA Premium Tax Credit (subsidy) calculations.</Description>
                 </Field>
                 <Divider />
               </FieldGroup>

@@ -5,7 +5,7 @@ import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm, useWatch, Controller } from 'react-hook-form';
 import posthog from 'posthog-js';
 
 import { simulationSettingsToConvex } from '@/lib/utils/data-transformers';
@@ -14,6 +14,7 @@ import SectionHeader from '@/components/ui/section-header';
 import SectionContainer from '@/components/ui/section-container';
 import Card from '@/components/ui/card';
 import { Select } from '@/components/catalyst/select';
+import { Switch } from '@/components/catalyst/switch';
 import { Field, FieldGroup, Fieldset, Label, Description, ErrorMessage } from '@/components/catalyst/fieldset';
 import ErrorMessageCard from '@/components/ui/error-message-card';
 import { type SimulationSettingsInputs, simulationSettingsSchema } from '@/lib/schemas/inputs/simulation-settings-form-schema';
@@ -33,7 +34,7 @@ export default function SimulationSettingsDrawer({ setOpen, simulationSettings }
   const planId = useSelectedPlanId();
 
   const simulationSettingsDefaultValues = useMemo(
-    () => ({ simulationSeed: 9521, simulationMode: 'fixedReturns', withdrawalStrategy: 'proportional' }) as const satisfies SimulationSettingsInputs,
+    () => ({ simulationSeed: 9521, simulationMode: 'fixedReturns', withdrawalStrategy: 'proportional', acaOptimization: false }) as const satisfies SimulationSettingsInputs,
     []
   );
 
@@ -147,7 +148,26 @@ export default function SimulationSettingsDrawer({ setOpen, simulationSettings }
                   </Field>
                 )}
                 <Field>
-                  <Label htmlFor="withdrawalStrategy">Withdrawal Strategy</Label>
+                  <Label htmlFor="acaOptimization" className="flex items-center gap-3">
+                      <Controller
+                        name="acaOptimization"
+                        control={control}
+                        render={({ field }) => (
+                          <Switch
+                            checked={field.value}
+                            onChange={field.onChange}
+                            color="rose"
+                          />
+                        )}
+                      />
+                      Enable ACA & MAGI Optimization
+                    </Label>
+                    <Description className="mb-4">
+                      When enabled, the withdrawal strategy will actively manage your Modified Adjusted Gross Income (MAGI) 
+                      to maximize Affordable Care Act (ACA) Premium Tax Credits and minimize lifetime costs.
+                      May trigger 72(t) SEPP distributions if under 59.5.
+                    </Description>
+                    <Label htmlFor="withdrawalStrategy">Withdrawal Strategy</Label>
                   <Select {...register('withdrawalStrategy')} id="withdrawalStrategy" name="withdrawalStrategy">
                     <option value="proportional">Proportional (Default)</option>
                     <option value="taxEfficient">Tax-Efficient Bracket Filling</option>

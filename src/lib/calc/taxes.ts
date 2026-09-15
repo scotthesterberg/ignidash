@@ -40,6 +40,7 @@ import {
   SOCIAL_SECURITY_TAX_THRESHOLDS_HEAD_OF_HOUSEHOLD,
 } from './tax-data/social-security-tax-brackets';
 import { SECTION_121_EXCLUSION } from './tax-data/section-121-exclusion';
+import { STATE_TAX_DATA } from './tax-data/state-tax-brackets';
 
 export interface CapitalGainsTaxesData {
   taxableIncomeTaxedAsCapitalGains: number;
@@ -65,9 +66,15 @@ export interface NIITData {
   threshold: number;
 }
 
+export interface StateIncomeTaxesData {
+  stateIncomeTaxAmount: number;
+  stateCapitalGainsTaxAmount: number;
+}
+
 export interface TaxesData {
   federalIncomeTaxes: FederalIncomeTaxesData;
   capitalGainsTaxes: CapitalGainsTaxesData;
+  stateTaxes?: StateIncomeTaxesData;
   niit: NIITData;
   earlyWithdrawalPenalties: EarlyWithdrawalPenaltyData;
   socialSecurityTaxes: SocialSecurityTaxesData;
@@ -135,7 +142,8 @@ export class TaxProcessor {
 
   constructor(
     private simulationState: SimulationState,
-    private filingStatus: FilingStatus
+    private filingStatus: FilingStatus,
+    private state?: string
   ) {}
 
   /** Save carryover state before first tax calculation of the year */
@@ -213,18 +221,22 @@ export class TaxProcessor {
 
     const niit = this.processNIIT(incomeData);
 
+    const stateTaxes = this.processStateTaxes(taxableIncomeTaxedAsOrdinary, taxableIncomeTaxedAsCapitalGains);
+
     const earlyWithdrawalPenalties = this.processEarlyWithdrawalPenalties(incomeData.earlyWithdrawals);
 
     const totalTaxLiabilityExcludingFICA =
       federalIncomeTaxes.federalIncomeTaxAmount +
       capitalGainsTaxes.capitalGainsTaxAmount +
       niit.niitAmount +
-      earlyWithdrawalPenalties.totalPenaltyAmount;
+      earlyWithdrawalPenalties.totalPenaltyAmount +
+      stateTaxes.stateIncomeTaxAmount + stateTaxes.stateCapitalGainsTaxAmount;
     const difference = totalTaxLiabilityExcludingFICA - annualIncomesData.totalAmountWithheld;
 
     return {
       federalIncomeTaxes,
       capitalGainsTaxes,
+      stateTaxes,
       niit,
       earlyWithdrawalPenalties,
       socialSecurityTaxes,
@@ -391,6 +403,49 @@ export class TaxProcessor {
     const capitalLossDeduction = -Math.max(-3000, realizedGainsAfterCarryover);
     this.capitalLossCarryover = realizedGainsAfterCarryover + capitalLossDeduction;
     return { realizedGains: 0, capitalLossDeduction, section121Exclusion };
+  }
+
+  private processStateTaxes(taxableOrdinary: number, taxableCapitalGains: number): StateIncomeTaxesData {
+    if (!this.state || !STATE_TAX_DATA[this.state]) {
+      return { stateIncomeTaxAmount: 0, stateCapitalGainsTaxAmount: 0 };
+    }
+
+    const stateData = STATE_TAX_DATA[this.state];
+    
+    // Calculate ordinary income tax
+    let stateIncomeTaxAmount = 0;
+    const incomeBrackets = stateData.incomeBrackets[this.filingStatus];
+    if (incomeBrackets) {
+      let incomeToTax = taxableOrdinary;
+      for (const bracket of incomeBrackets) {
+        if (incomeToTax <= 0) break;
+        const taxableInBracket = Math.min(incomeToTax, bracket.max);
+        stateIncomeTaxAmount += taxableInBracket * bracket.rate;
+        incomeToTax -= bracket.max;
+      }
+    }
+
+    // Calculate capital gains tax
+    let stateCapitalGainsTaxAmount = 0;
+    if (stateData.capitalGainsRate === 'income') {
+      let gainsToTax = taxableCapitalGains;
+      // Stack gains on top of ordinary income
+      if (incomeBrackets) {
+        let totalIncome = taxableOrdinary + taxableCapitalGains;
+        let taxWithGains = 0;
+        for (const bracket of incomeBrackets) {
+          if (totalIncome <= 0) break;
+          const taxableInBracket = Math.min(totalIncome, bracket.max);
+          taxWithGains += taxableInBracket * bracket.rate;
+          totalIncome -= bracket.max;
+        }
+        stateCapitalGainsTaxAmount = Math.max(0, taxWithGains - stateIncomeTaxAmount);
+      }
+    } else {
+      stateCapitalGainsTaxAmount = taxableCapitalGains * stateData.capitalGainsRate;
+    }
+
+    return { stateIncomeTaxAmount, stateCapitalGainsTaxAmount };
   }
 
   /** Calculates progressive income tax across ordinary income brackets (IRC §1) */

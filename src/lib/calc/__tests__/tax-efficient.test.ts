@@ -30,7 +30,7 @@ describe('Tax-Efficient Withdrawal Strategy', () => {
     const rules = new ContributionRules([], { type: 'spend' });
     
     // 2. Initialize Processor with taxEfficient
-    const processor = new PortfolioProcessor(state, context, rules, undefined, 'taxEfficient', 'marriedFilingJointly');
+    const processor = new PortfolioProcessor(state, context, rules, undefined, 'taxEfficient', false, 'marriedFilingJointly');
     
     // 3. Process RMDs first
     const rmdResult = processor.processRequiredMinimumDistributions();
