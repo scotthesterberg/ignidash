@@ -113,7 +113,14 @@ export class FinancialSimulationEngine {
     const expensesProcessor = new ExpensesProcessor(simulationState, expenses);
     const debtsProcessor = new DebtsProcessor(simulationState, debts);
     const physicalAssetsProcessor = new PhysicalAssetsProcessor(simulationState, physicalAssets);
-    const portfolioProcessor = new PortfolioProcessor(simulationState, simulationContext, contributionRules, this.inputs.glidePath);
+    const portfolioProcessor = new PortfolioProcessor(
+      simulationState,
+      simulationContext,
+      contributionRules,
+      this.inputs.glidePath,
+      this.inputs.simulationSettings.withdrawalStrategy,
+      this.inputs.taxSettings.filingStatus
+    );
     const taxProcessor = new TaxProcessor(simulationState, this.inputs.taxSettings.filingStatus);
 
     // Init phase identifier

@@ -146,6 +146,14 @@ export default function SimulationSettingsDrawer({ setOpen, simulationSettings }
                     </Description>
                   </Field>
                 )}
+                <Field>
+                  <Label htmlFor="withdrawalStrategy">Withdrawal Strategy</Label>
+                  <Select {...register('withdrawalStrategy')} id="withdrawalStrategy" name="withdrawalStrategy">
+                    <option value="proportional">Proportional (Default)</option>
+                    <option value="taxEfficient">Tax-Efficient Bracket Filling</option>
+                  </Select>
+                  <Description>Choose how funds are withdrawn to meet spending needs.</Description>
+                </Field>
                 <Divider />
                 {simulationMode === 'historicalReturns' && (
                   <>

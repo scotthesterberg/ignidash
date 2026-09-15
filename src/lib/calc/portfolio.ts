@@ -32,6 +32,8 @@ import {
   addAssetAmounts,
 } from './asset';
 import { ContributionRules } from './contribution-rules';
+import { TAX_BRACKETS, STANDARD_DEDUCTION } from './tax-brackets';
+
 import type { IncomesData } from './incomes';
 import type { ExpensesData } from './expenses';
 import type { DebtsData } from './debts';
@@ -65,7 +67,9 @@ export class PortfolioProcessor {
     private simulationState: SimulationState,
     private simulationContext: SimulationContext,
     private contributionRules: ContributionRules,
-    private glidePath?: GlidePathInputs
+    private glidePath?: GlidePathInputs,
+    private withdrawalStrategy: 'proportional' | 'taxEfficient' = 'proportional',
+    private filingStatus: 'single' | 'married' | 'headOfHousehold' = 'single'
   ) {
     this.initialAssetAllocation = this.simulationState.portfolio.getWeightedAssetAllocation();
     this.extraSavingsAccount = this.createExtraSavingsAccount();
@@ -369,50 +373,85 @@ export class PortfolioProcessor {
 
     let realizedGains = 0;
     let earningsWithdrawn = 0;
-
-    const withdrawalOrder = this.getWithdrawalOrder();
     let remainingToWithdraw = Math.abs(netCashFlow);
 
-    for (const { accountType, modifier } of withdrawalOrder) {
-      if (remainingToWithdraw <= 0) break;
+    const accounts = this.simulationState.portfolio.getAccounts();
 
-      const accountsOfType = this.simulationState.portfolio.getAccounts().filter((account) => account.getAccountType() === accountType);
-      if (accountsOfType.length === 0) continue;
+    const withdrawFromAccounts = (accountTypes: Array<{ type: string; modifier?: string }>, maxAmount?: number) => {
+      let withdrawnInThisStep = 0;
+      for (const { type: accountType, modifier } of accountTypes) {
+        if (remainingToWithdraw <= 0 || (maxAmount !== undefined && withdrawnInThisStep >= maxAmount)) break;
 
-      for (const account of accountsOfType) {
-        if (remainingToWithdraw <= 0) break;
-        if (!(account.getBalance() > 0)) continue;
+        const accountsOfType = accounts.filter((a) => a.getAccountType() === accountType);
+        for (const account of accountsOfType) {
+          if (remainingToWithdraw <= 0 || (maxAmount !== undefined && withdrawnInThisStep >= maxAmount)) break;
+          if (account.getBalance() <= 0) continue;
 
-        let maxWithdrawable = account.getBalance();
-        if (modifier === 'contributionsOnly' && account instanceof TaxFreeAccount) {
-          maxWithdrawable = Math.min(maxWithdrawable, account.getContributionBasis());
+          let maxWithdrawable = account.getBalance();
+          if (modifier === 'contributionsOnly' && account instanceof TaxFreeAccount) {
+            maxWithdrawable = Math.min(maxWithdrawable, account.getContributionBasis());
+          }
+
+          let amountToWithdraw = Math.min(remainingToWithdraw, maxWithdrawable);
+          if (maxAmount !== undefined) {
+            amountToWithdraw = Math.min(amountToWithdraw, maxAmount - withdrawnInThisStep);
+          }
+
+          const withdrawalAllocation = this.getAllocationForWithdrawal(amountToWithdraw);
+          const {
+            realizedGains: gains,
+            earningsWithdrawn: earnings,
+            ...withdrawnAssets
+          } = account.applyWithdrawal(amountToWithdraw, 'regular', withdrawalAllocation);
+
+          realizedGainsByAccount[account.getAccountID()] = (realizedGainsByAccount[account.getAccountID()] ?? 0) + gains;
+          realizedGains += gains;
+
+          earningsWithdrawnByAccount[account.getAccountID()] = (earningsWithdrawnByAccount[account.getAccountID()] ?? 0) + earnings;
+          earningsWithdrawn += earnings;
+
+          byAccount[account.getAccountID()] = addFlows(byAccount[account.getAccountID()] ?? zeroFlows(), withdrawnAssets);
+          remainingToWithdraw -= amountToWithdraw;
+          withdrawnInThisStep += amountToWithdraw;
         }
-
-        const withdrawFromThisAccount = Math.min(remainingToWithdraw, maxWithdrawable);
-
-        const withdrawalAllocation = this.getAllocationForWithdrawal(withdrawFromThisAccount);
-        const {
-          realizedGains: realizedGainsFromThisAccount,
-          earningsWithdrawn: earningsWithdrawnFromThisAccount,
-          ...withdrawnAssets
-        } = account.applyWithdrawal(withdrawFromThisAccount, 'regular', withdrawalAllocation);
-
-        realizedGainsByAccount[account.getAccountID()] =
-          (realizedGainsByAccount[account.getAccountID()] ?? 0) + realizedGainsFromThisAccount;
-        realizedGains += realizedGainsFromThisAccount;
-
-        earningsWithdrawnByAccount[account.getAccountID()] =
-          (earningsWithdrawnByAccount[account.getAccountID()] ?? 0) + earningsWithdrawnFromThisAccount;
-        earningsWithdrawn += earningsWithdrawnFromThisAccount;
-
-        byAccount[account.getAccountID()] = addFlows(byAccount[account.getAccountID()] ?? zeroFlows(), withdrawnAssets);
-        remainingToWithdraw -= withdrawFromThisAccount;
       }
+      return withdrawnInThisStep;
+    };
+
+    if (this.withdrawalStrategy === 'taxEfficient') {
+      // 1. Savings
+      withdrawFromAccounts([{ type: 'savings' }]);
+
+      // 2. Taxable First
+      withdrawFromAccounts([{ type: 'taxableBrokerage' }]);
+
+      // 3. Tax-Deferred Fill
+      // Approximate annual taxable income: we just take a simple approach based on age or assume 0 for now.
+      // Wait, we need to know the brackets.
+      const standardDeduction = STANDARD_DEDUCTION[this.filingStatus];
+      const brackets = TAX_BRACKETS[this.filingStatus];
+      // Let's assume taxable income is currently 0 to simplify, or maybe RMDs contribute.
+      // If we don't have exact taxable income tracking in PortfolioProcessor, we'll assume we can fill the 12% bracket
+      // A typical strategy fills up to the 12% or 22% bracket. Let's fill up to the first bracket (10% / 12% ?).
+      // We will fill up to the end of the 12% bracket for this year as an approximation.
+      // 12% bracket max for married is 94300. Plus standard deduction 29200 = 123500 total room.
+      // We withdraw up to that room divided by 12 (monthly).
+      const roomInBracket = brackets[1].max + standardDeduction;
+      const monthlyRoom = roomInBracket / 12;
+
+      withdrawFromAccounts([{ type: '401k' }, { type: '403b' }, { type: 'ira' }], monthlyRoom);
+
+      // 4. Roth Remainder
+      withdrawFromAccounts([{ type: 'roth401k' }, { type: 'roth403b' }, { type: 'rothIra' }, { type: 'hsa' }]);
+
+      // 5. If still deficit, pull from tax-deferred again
+      withdrawFromAccounts([{ type: '401k' }, { type: '403b' }, { type: 'ira' }]);
+    } else {
+      const withdrawalOrder = this.getWithdrawalOrder();
+      withdrawFromAccounts(withdrawalOrder.map((item) => ({ type: item.accountType, modifier: item.modifier })));
     }
 
     const total = Object.values(byAccount).reduce((acc, curr) => addFlows(acc, curr), zeroFlows());
-
-    // Any remaining amount that couldn't be withdrawn is recorded as a shortfall
     const shortfall = remainingToWithdraw;
     this.outstandingShortfall += shortfall;
 
