@@ -94,7 +94,10 @@ export function privacySettingsFromConvex(privacySettings: Doc<'plans'>['privacy
 }
 
 export function simulationSettingsFromConvex(simulationSettings: Doc<'plans'>['simulationSettings']): SimulationSettingsInputs {
-  return { ...simulationSettings };
+  return {
+    ...simulationSettings,
+    withdrawalStrategy: simulationSettings.withdrawalStrategy ?? 'proportional',
+  };
 }
 
 export function expenseFromConvex(expense: Doc<'plans'>['expenses'][number]): ExpenseInputs {

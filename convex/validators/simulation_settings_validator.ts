@@ -9,6 +9,7 @@ export const simulationSettingsValidator = v.object({
     v.literal('monteCarloStochasticReturns'),
     v.literal('monteCarloHistoricalReturns')
   ),
+  withdrawalStrategy: v.optional(v.union(v.literal('proportional'), v.literal('taxEfficient'))),
   historicalStartYearOverride: v.optional(v.number()),
   historicalRetirementStartYearOverride: v.optional(v.number()),
 });

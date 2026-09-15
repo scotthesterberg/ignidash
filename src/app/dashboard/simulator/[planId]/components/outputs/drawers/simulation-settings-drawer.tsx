@@ -33,7 +33,7 @@ export default function SimulationSettingsDrawer({ setOpen, simulationSettings }
   const planId = useSelectedPlanId();
 
   const simulationSettingsDefaultValues = useMemo(
-    () => ({ simulationSeed: 9521, simulationMode: 'fixedReturns' }) as const satisfies SimulationSettingsInputs,
+    () => ({ simulationSeed: 9521, simulationMode: 'fixedReturns', withdrawalStrategy: 'proportional' }) as const satisfies SimulationSettingsInputs,
     []
   );
 

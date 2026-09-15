@@ -32,7 +32,7 @@ import {
   addAssetAmounts,
 } from './asset';
 import { ContributionRules } from './contribution-rules';
-import { TAX_BRACKETS, STANDARD_DEDUCTION } from './tax-brackets';
+import { TAX_BRACKETS, STANDARD_DEDUCTION, type FilingStatus } from './tax-brackets';
 
 import type { IncomesData } from './incomes';
 import type { ExpensesData } from './expenses';
@@ -69,7 +69,7 @@ export class PortfolioProcessor {
     private contributionRules: ContributionRules,
     private glidePath?: GlidePathInputs,
     private withdrawalStrategy: 'proportional' | 'taxEfficient' = 'proportional',
-    private filingStatus: 'single' | 'married' | 'headOfHousehold' = 'single'
+    private filingStatus: FilingStatus = 'single'
   ) {
     this.initialAssetAllocation = this.simulationState.portfolio.getWeightedAssetAllocation();
     this.extraSavingsAccount = this.createExtraSavingsAccount();

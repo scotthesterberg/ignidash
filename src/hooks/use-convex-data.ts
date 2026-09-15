@@ -15,6 +15,7 @@ import {
   contributionFromConvex,
   baseContributionFromConvex,
   glidePathFromConvex,
+  simulationSettingsFromConvex,
 } from '@/lib/utils/data-transformers';
 import { useSelectedPlanId } from '@/hooks/use-selected-plan-id';
 
@@ -224,7 +225,7 @@ export const usePrivacySettingsData = () => {
 export const useSimulationSettingsData = () => {
   const planId = useSelectedPlanId();
   const q = useQuery(api.simulation_settings.get, { planId });
-  return useMemo(() => (q ? q : null), [q]);
+  return useMemo(() => (q ? simulationSettingsFromConvex(q) : null), [q]);
 };
 
 // Finances
