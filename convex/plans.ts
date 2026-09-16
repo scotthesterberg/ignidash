@@ -5,7 +5,7 @@ import type { Doc } from './_generated/dataModel';
 import { getUserIdOrThrow } from './utils/auth_utils';
 import { deleteAllConversationsForPlan } from './utils/conversation_utils';
 import { deleteAllInsightsForPlan } from './utils/insights_utils';
-import { deleteAllSnapshotsForPlan } from './utils/snapshot_utils';
+import { deleteAllSnapshotsForPlan, patchPlanWithSnapshot } from './utils/snapshot_utils';
 import { getPlanForCurrentUserOrThrow, getAllPlansForUser } from './utils/plan_utils';
 import { removeDanglingSyncIds } from './utils/plan_export_utils';
 import { timelineValidator } from './validators/timeline_validator';
@@ -279,5 +279,77 @@ export const setPlanAsDefault = mutation({
     await Promise.all(plans.filter((plan) => plan.isDefault).map((plan) => ctx.db.patch(plan._id, { isDefault: false })));
 
     await ctx.db.patch(planId, { isDefault: true });
+  },
+});
+
+export const batchImportMonarchData = mutation({
+  args: {
+    planId: v.id('plans'),
+    accounts: v.array(accountValidator),
+    expenses: v.array(expenseValidator),
+    debts: v.optional(v.array(debtValidator)),
+  },
+  handler: async (ctx, { planId, accounts: newAccounts, expenses: newExpenses, debts: newDebts = [] }) => {
+    const plan = await getPlanForCurrentUserOrThrow(ctx, planId);
+
+    const existingAccounts = [...plan.accounts];
+    const updatedContributionRules = [...plan.contributionRules];
+
+    for (const acc of newAccounts) {
+      const idx = existingAccounts.findIndex((a) => a.id === acc.id || a.name.toLowerCase() === acc.name.toLowerCase());
+      if (idx !== -1) {
+        existingAccounts[idx] = acc;
+      } else {
+        if (existingAccounts.length >= 25) {
+          throw new ConvexError('Maximum of 25 accounts reached.');
+        }
+        existingAccounts.push(acc);
+        if (acc.type !== 'savings') {
+          updatedContributionRules.push({
+            id: crypto.randomUUID(),
+            accountId: acc.id,
+            rank: updatedContributionRules.length + 1,
+            amount: { type: 'unlimited' as const },
+            disabled: false,
+          });
+        }
+      }
+    }
+
+    const existingExpenses = [...plan.expenses];
+    for (const exp of newExpenses) {
+      const idx = existingExpenses.findIndex((e) => e.id === exp.id || e.name.toLowerCase() === exp.name.toLowerCase());
+      if (idx !== -1) {
+        existingExpenses[idx] = exp;
+      } else {
+        if (existingExpenses.length >= 30) {
+          throw new ConvexError('Maximum of 30 expenses reached.');
+        }
+        existingExpenses.push(exp);
+      }
+    }
+
+    const existingDebts = [...(plan.debts ?? [])];
+    for (const debt of newDebts) {
+      const idx = existingDebts.findIndex((d) => d.id === debt.id || d.name.toLowerCase() === debt.name.toLowerCase());
+      if (idx !== -1) {
+        existingDebts[idx] = debt;
+      } else {
+        existingDebts.push(debt);
+      }
+    }
+
+    await patchPlanWithSnapshot(ctx, planId, {
+      accounts: existingAccounts,
+      expenses: existingExpenses,
+      debts: existingDebts,
+      contributionRules: updatedContributionRules,
+    });
+
+    return {
+      accountsCount: newAccounts.length,
+      expensesCount: newExpenses.length,
+      debtsCount: newDebts.length,
+    };
   },
 });
