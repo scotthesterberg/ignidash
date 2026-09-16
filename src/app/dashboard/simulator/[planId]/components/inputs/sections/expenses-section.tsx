@@ -23,6 +23,8 @@ import DataItem from '@/components/ui/data-item';
 import { Skeleton } from '@/components/ui/skeleton';
 import DeleteDataItemAlert from '@/components/ui/delete-data-item-alert';
 import DataListEmptyStateButton from '@/components/ui/data-list-empty-state-button';
+import MonarchImportDialog from '../dialogs/monarch-import-dialog';
+import { ArrowDownTrayIcon } from '@heroicons/react/16/solid';
 
 import ExpenseDialog from '../dialogs/expense-dialog';
 import DebtDialog from '../dialogs/debt-dialog';
@@ -72,6 +74,7 @@ export default function ExpensesSection(props: ExpensesSectionProps) {
   const [debtDialogOpen, setDebtDialogOpen] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<DebtInputs | null>(null);
   const [debtToDelete, setDebtToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [monarchImportDialogOpen, setMonarchImportDialogOpen] = useState(false);
 
   const { data: expenses, isLoading: expensesLoading } = useExpensesData();
   const numExpenses = Object.keys(expenses).length;
@@ -206,6 +209,10 @@ export default function ExpensesSection(props: ExpensesSectionProps) {
                     ))}
               </ul>
               <div className="mt-auto flex items-center justify-end gap-x-2">
+                <Button outline onClick={() => setMonarchImportDialogOpen(true)}>
+                  <ArrowDownTrayIcon />
+                  Import Monarch
+                </Button>
                 <Button outline onClick={() => setDebtDialogOpen(true)} disabled={!!selectedDebt}>
                   <PlusIcon />
                   Debt
@@ -219,6 +226,7 @@ export default function ExpensesSection(props: ExpensesSectionProps) {
           )}
           {!hasData && !isLoading && (
             <div className="flex h-full gap-2 sm:flex-col">
+              <DataListEmptyStateButton onClick={() => setMonarchImportDialogOpen(true)} icon={ArrowDownTrayIcon} buttonText="Import from Monarch" />
               <DataListEmptyStateButton onClick={() => setExpenseDialogOpen(true)} icon={BanknoteArrowDownIcon} buttonText="Add expense" />
               <DataListEmptyStateButton onClick={() => setDebtDialogOpen(true)} icon={CreditCardIcon} buttonText="Add debt" />
             </div>
@@ -237,6 +245,9 @@ export default function ExpensesSection(props: ExpensesSectionProps) {
           )}
         </div>
       </DisclosureSection>
+      <Dialog size="xl" open={monarchImportDialogOpen} onClose={() => setMonarchImportDialogOpen(false)}>
+        <MonarchImportDialog onClose={() => setMonarchImportDialogOpen(false)} />
+      </Dialog>
       <Dialog size="xl" open={expenseDialogOpen} onClose={handleExpenseClose}>
         <ExpenseDialog selectedExpense={selectedExpense} numExpenses={numExpenses} onClose={handleExpenseClose} />
       </Dialog>

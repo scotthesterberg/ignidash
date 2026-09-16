@@ -28,6 +28,8 @@ import AccountDialog from '../dialogs/account-dialog';
 import SavingsDialog from '../dialogs/savings-dialog';
 import GlidePathDialog from '../dialogs/glide-path-dialog';
 import PhysicalAssetDialog from '../dialogs/physical-asset-dialog';
+import MonarchImportDialog from '../dialogs/monarch-import-dialog';
+import { ArrowDownTrayIcon } from '@heroicons/react/16/solid';
 
 function getAccountDesc(account: AccountInputs) {
   return (
@@ -97,6 +99,7 @@ export default function NetWorthSection(props: NetWorthSectionProps) {
   const [savingsDialogOpen, setSavingsDialogOpen] = useState(false);
   const [selectedSavings, setSelectedSavings] = useState<AccountInputs | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [monarchImportDialogOpen, setMonarchImportDialogOpen] = useState(false);
 
   const [glidePathDialogOpen, setGlidePathDialogOpen] = useState(false);
 
@@ -204,10 +207,16 @@ export default function NetWorthSection(props: NetWorthSectionProps) {
                   ))}
               </ul>
               <div className="mt-auto flex flex-col items-end gap-y-2">
-                <Button outline onClick={() => setPhysicalAssetDialogOpen(true)} disabled={!!selectedPhysicalAsset}>
-                  <PlusIcon />
-                  Physical asset
-                </Button>
+                <div className="flex items-center gap-x-2">
+                  <Button outline onClick={() => setMonarchImportDialogOpen(true)}>
+                    <ArrowDownTrayIcon />
+                    Import Monarch
+                  </Button>
+                  <Button outline onClick={() => setPhysicalAssetDialogOpen(true)} disabled={!!selectedPhysicalAsset}>
+                    <PlusIcon />
+                    Physical asset
+                  </Button>
+                </div>
                 <div className="flex items-center gap-x-2">
                   <Button outline onClick={() => setGlidePathDialogOpen(true)}>
                     <RouteIcon data-slot="icon" />
@@ -226,6 +235,7 @@ export default function NetWorthSection(props: NetWorthSectionProps) {
           )}
           {!hasData && !isLoading && (
             <div className="flex h-full gap-2 sm:flex-col">
+              <DataListEmptyStateButton onClick={() => setMonarchImportDialogOpen(true)} icon={ArrowDownTrayIcon} buttonText="Import from Monarch" />
               <DataListEmptyStateButton onClick={() => setSavingsDialogOpen(true)} icon={PiggyBankIcon} buttonText="Add savings" />
               <DataListEmptyStateButton onClick={() => setAccountDialogOpen(true)} icon={TrendingUpIcon} buttonText="Add investment" />
               <DataListEmptyStateButton onClick={() => setPhysicalAssetDialogOpen(true)} icon={HomeIcon} buttonText="Add physical asset" />
@@ -250,6 +260,9 @@ export default function NetWorthSection(props: NetWorthSectionProps) {
           )}
         </div>
       </DisclosureSection>
+      <Dialog size="xl" open={monarchImportDialogOpen} onClose={() => setMonarchImportDialogOpen(false)}>
+        <MonarchImportDialog onClose={() => setMonarchImportDialogOpen(false)} />
+      </Dialog>
       <Dialog size="xl" open={accountDialogOpen} onClose={handleAccountDialogClose}>
         <AccountDialog selectedAccount={selectedAccount} accounts={accounts} nwAssets={nwAssets} onClose={handleAccountDialogClose} />
       </Dialog>
