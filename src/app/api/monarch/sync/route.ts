@@ -58,12 +58,15 @@ export async function POST(request: Request) {
     }
 
     if (fetchTransactions || fetchIncome) {
+      const endDate = new Date();
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - lookbackMonths);
       const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
 
       const rawTransactions = (await mm.getAllTransactions({
         startDate: startDateStr,
+        endDate: endDateStr,
       })) as unknown as MonarchRawTransaction[];
 
       if (fetchTransactions) {
