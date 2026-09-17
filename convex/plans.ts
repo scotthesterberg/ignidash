@@ -321,13 +321,15 @@ export const batchImportMonarchData = mutation({
     }
 
     const existingExpenses = [...plan.expenses];
+    let expensesSkipped = 0;
     for (const exp of newExpenses) {
       const idx = existingExpenses.findIndex((e) => e.id === exp.id || e.name.toLowerCase() === exp.name.toLowerCase());
       if (idx !== -1) {
         existingExpenses[idx] = exp;
       } else {
         if (existingExpenses.length >= 30) {
-          throw new ConvexError('Maximum of 30 expenses reached.');
+          expensesSkipped++;
+          continue; // Skip rather than abort — return skipped count to caller
         }
         existingExpenses.push(exp);
       }
@@ -344,6 +346,7 @@ export const batchImportMonarchData = mutation({
     }
 
     const existingIncomes = [...(plan.incomes ?? [])];
+    let incomesSkipped = 0;
     for (const income of newIncomes) {
       const idx = existingIncomes.findIndex(
         (inc) => inc.id === income.id || inc.name.toLowerCase() === income.name.toLowerCase()
@@ -352,7 +355,8 @@ export const batchImportMonarchData = mutation({
         existingIncomes[idx] = income;
       } else {
         if (existingIncomes.length >= 10) {
-          throw new ConvexError('Maximum of 10 incomes reached.');
+          incomesSkipped++;
+          continue; // Skip rather than abort
         }
         existingIncomes.push(income);
       }
@@ -368,9 +372,11 @@ export const batchImportMonarchData = mutation({
 
     return {
       accountsCount: newAccounts.length,
-      expensesCount: newExpenses.length,
+      expensesCount: newExpenses.length - expensesSkipped,
+      expensesSkipped,
       debtsCount: newDebts.length,
-      incomesCount: newIncomes.length,
+      incomesCount: newIncomes.length - incomesSkipped,
+      incomesSkipped,
     };
   },
 });

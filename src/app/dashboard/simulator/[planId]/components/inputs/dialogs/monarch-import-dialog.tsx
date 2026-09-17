@@ -276,7 +276,7 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
         })
       );
 
-      await batchImport({
+      const result = await batchImport({
         planId,
         accounts: convexAccounts,
         debts: convexDebts,
@@ -287,14 +287,21 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
       const parts = [
         convexAccounts.length > 0 && `${convexAccounts.length} account(s)`,
         convexDebts.length > 0 && `${convexDebts.length} debt(s)`,
-        convexExpenses.length > 0 && `${convexExpenses.length} expense category(ies)`,
-        convexIncomes.length > 0 && `${convexIncomes.length} income source(s)`,
+        result.expensesCount > 0 && `${result.expensesCount} expense category(ies)`,
+        result.incomesCount > 0 && `${result.incomesCount} income source(s)`,
       ].filter(Boolean);
 
-      setImportSuccess(`Successfully imported ${parts.join(', ')}!`);
+      const skippedParts = [
+        result.expensesSkipped > 0 && `${result.expensesSkipped} expense(s) skipped (plan limit of 30 reached)`,
+        result.incomesSkipped > 0 && `${result.incomesSkipped} income(s) skipped (plan limit of 10 reached)`,
+      ].filter(Boolean);
+
+      setImportSuccess(
+        `Successfully imported ${parts.join(', ')}!${skippedParts.length > 0 ? `\n⚠️ ${skippedParts.join('; ')}.` : ''}`
+      );
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, skippedParts.length > 0 ? 3000 : 1500); // Give extra time to read the warning
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Failed to import data into plan.');
     } finally {
