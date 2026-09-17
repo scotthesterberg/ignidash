@@ -288,8 +288,12 @@ export const batchImportMonarchData = mutation({
     accounts: v.array(accountValidator),
     expenses: v.array(expenseValidator),
     debts: v.optional(v.array(debtValidator)),
+    incomes: v.optional(v.array(incomeValidator)),
   },
-  handler: async (ctx, { planId, accounts: newAccounts, expenses: newExpenses, debts: newDebts = [] }) => {
+  handler: async (
+    ctx,
+    { planId, accounts: newAccounts, expenses: newExpenses, debts: newDebts = [], incomes: newIncomes = [] }
+  ) => {
     const plan = await getPlanForCurrentUserOrThrow(ctx, planId);
 
     const existingAccounts = [...plan.accounts];
@@ -339,10 +343,26 @@ export const batchImportMonarchData = mutation({
       }
     }
 
+    const existingIncomes = [...(plan.incomes ?? [])];
+    for (const income of newIncomes) {
+      const idx = existingIncomes.findIndex(
+        (inc) => inc.id === income.id || inc.name.toLowerCase() === income.name.toLowerCase()
+      );
+      if (idx !== -1) {
+        existingIncomes[idx] = income;
+      } else {
+        if (existingIncomes.length >= 10) {
+          throw new ConvexError('Maximum of 10 incomes reached.');
+        }
+        existingIncomes.push(income);
+      }
+    }
+
     await patchPlanWithSnapshot(ctx, planId, {
       accounts: existingAccounts,
       expenses: existingExpenses,
       debts: existingDebts,
+      incomes: existingIncomes,
       contributionRules: updatedContributionRules,
     });
 
@@ -350,6 +370,7 @@ export const batchImportMonarchData = mutation({
       accountsCount: newAccounts.length,
       expensesCount: newExpenses.length,
       debtsCount: newDebts.length,
+      incomesCount: newIncomes.length,
     };
   },
 });
