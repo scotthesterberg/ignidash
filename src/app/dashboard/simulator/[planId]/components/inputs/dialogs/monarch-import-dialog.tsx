@@ -14,30 +14,38 @@ import { useSelectedPlanId } from '@/hooks/use-selected-plan-id';
 import { parseMonarchAccountsCsv, parseMonarchTransactionsCsv } from '@/lib/monarch/csv-parser';
 import {
   aggregateMonarchTransactions,
+  aggregateMonarchIncome,
   transformMonarchAccounts,
   type MappedAccountItem,
   type MappedExpenseItem,
+  type MappedIncomeItem,
 } from '@/lib/monarch/mapping';
 import type { AccountInputs } from '@/lib/schemas/inputs/account-form-schema';
-import { accountToConvex, expenseToConvex, debtToConvex } from '@/lib/utils/data-transformers';
+import { accountToConvex, expenseToConvex, debtToConvex, incomeToConvex } from '@/lib/utils/data-transformers';
 import { ArrowDownTrayIcon, DocumentTextIcon, ExclamationTriangleIcon } from '@heroicons/react/16/solid';
-import { CloudIcon, CheckCircleIcon } from 'lucide-react';
+import { CloudIcon, CheckCircleIcon, MailIcon } from 'lucide-react';
 
 interface MonarchImportDialogProps {
   onClose: () => void;
 }
 
 type TabMode = 'direct' | 'csv';
+type AuthStep = 'credentials' | 'otp' | 'mfa';
 
 export default function MonarchImportDialog({ onClose }: MonarchImportDialogProps) {
   const planId = useSelectedPlanId();
   const [tab, setTab] = useState<TabMode>('direct');
 
   // Direct sync credentials
-  const [token, setToken] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [authStep, setAuthStep] = useState<AuthStep>('credentials');
   const [lookbackMonths, setLookbackMonths] = useState(6);
   const [syncAccounts, setSyncAccounts] = useState(true);
   const [syncExpenses, setSyncExpenses] = useState(true);
+  const [syncIncome, setSyncIncome] = useState(true);
 
   // CSV files state
   const [accountsCsvFile, setAccountsCsvFile] = useState<File | null>(null);
@@ -51,16 +59,21 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
   const [step, setStep] = useState<'config' | 'review'>('config');
   const [mappedAccounts, setMappedAccounts] = useState<MappedAccountItem[]>([]);
   const [mappedExpenses, setMappedExpenses] = useState<MappedExpenseItem[]>([]);
+  const [mappedIncome, setMappedIncome] = useState<MappedIncomeItem[]>([]);
 
   // Mutation
   const batchImport = useMutation(api.plans.batchImportMonarchData);
   const [isImporting, setIsImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
 
-  // 1. Handle Fetch via Direct API
+  // 1. Handle Fetch via Direct API (with email/password)
   const handleFetchDirect = async () => {
-    if (!token.trim()) {
-      setFetchError('Please provide your Monarch Money session token.');
+    if (!email.trim()) {
+      setFetchError('Please enter your Monarch Money email address.');
+      return;
+    }
+    if (!password.trim()) {
+      setFetchError('Please enter your Monarch Money password.');
       return;
     }
 
@@ -68,24 +81,50 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
     setFetchError(null);
 
     try {
+      const body: Record<string, unknown> = {
+        email: email.trim(),
+        password,
+        lookbackMonths,
+        fetchAccounts: syncAccounts,
+        fetchTransactions: syncExpenses,
+        fetchIncome: syncIncome,
+      };
+
+      if (authStep === 'otp' && otpCode.trim()) {
+        body.otpCode = otpCode.trim();
+      } else if (authStep === 'mfa' && mfaCode.trim()) {
+        body.mfaCode = mfaCode.trim();
+      }
+
       const res = await fetch('/api/monarch/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          lookbackMonths,
-          fetchAccounts: syncAccounts,
-          fetchTransactions: syncExpenses,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
+
+      // 202 means we need additional auth step (OTP or MFA)
+      if (res.status === 202) {
+        if (data.requiresOtp) {
+          setAuthStep('otp');
+          setFetchError(null);
+          return;
+        }
+        if (data.requiresMfa) {
+          setAuthStep('mfa');
+          setFetchError(null);
+          return;
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Failed to sync with Monarch Money.');
       }
 
       setMappedAccounts(data.accounts || []);
       setMappedExpenses(data.expenses || []);
+      setMappedIncome(data.income || []);
       setStep('review');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error during sync.');
@@ -107,6 +146,7 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
     try {
       let accounts: MappedAccountItem[] = [];
       let expenses: MappedExpenseItem[] = [];
+      let income: MappedIncomeItem[] = [];
 
       if (accountsCsvFile) {
         const text = await accountsCsvFile.text();
@@ -117,11 +157,17 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
       if (transactionsCsvFile) {
         const text = await transactionsCsvFile.text();
         const rawTxns = parseMonarchTransactionsCsv(text);
-        expenses = aggregateMonarchTransactions(rawTxns, lookbackMonths);
+        if (syncExpenses) {
+          expenses = aggregateMonarchTransactions(rawTxns, lookbackMonths);
+        }
+        if (syncIncome) {
+          income = aggregateMonarchIncome(rawTxns, lookbackMonths);
+        }
       }
 
       setMappedAccounts(accounts);
       setMappedExpenses(expenses);
+      setMappedIncome(income);
       setStep('review');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Failed to parse CSV files.');
@@ -139,8 +185,9 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
       const selectedAccounts = mappedAccounts.filter((a) => a.included && a.selectedType !== 'debt');
       const selectedDebts = mappedAccounts.filter((a) => a.included && a.selectedType === 'debt');
       const selectedExpenses = mappedExpenses.filter((e) => e.included);
+      const selectedIncome = mappedIncome.filter((i) => i.included);
 
-      // Convert to Ignidash types
+      // Convert accounts to Ignidash types
       const convexAccounts = selectedAccounts.map((a) => {
         const base = {
           id: a.id,
@@ -211,16 +258,40 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
         })
       );
 
+      const convexIncomes = selectedIncome.map((inc) =>
+        incomeToConvex({
+          id: inc.id,
+          name: inc.categoryName,
+          amount: Math.max(1, Math.round(inc.monthlyAverage)),
+          frequency: 'monthly',
+          timeframe: {
+            start: { type: 'now' },
+            end: { type: 'atRetirement' },
+          },
+          taxes: {
+            incomeType: 'wage',
+            withholding: 22,
+          },
+          disabled: false,
+        })
+      );
+
       await batchImport({
         planId,
         accounts: convexAccounts,
         debts: convexDebts,
         expenses: convexExpenses,
+        incomes: convexIncomes,
       });
 
-      setImportSuccess(
-        `Successfully imported ${convexAccounts.length} account(s), ${convexDebts.length} debt(s), and ${convexExpenses.length} expense category(ies)!`
-      );
+      const parts = [
+        convexAccounts.length > 0 && `${convexAccounts.length} account(s)`,
+        convexDebts.length > 0 && `${convexDebts.length} debt(s)`,
+        convexExpenses.length > 0 && `${convexExpenses.length} expense category(ies)`,
+        convexIncomes.length > 0 && `${convexIncomes.length} income source(s)`,
+      ].filter(Boolean);
+
+      setImportSuccess(`Successfully imported ${parts.join(', ')}!`);
       setTimeout(() => {
         onClose();
       }, 1500);
@@ -276,19 +347,68 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
 
             {tab === 'direct' ? (
               <div className="space-y-4">
-                <Field>
-                  <Label htmlFor="token">Monarch Session Token</Label>
-                  <Input
-                    id="token"
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1Ni..."
-                  />
-                  <Description>
-                    Obtain this from your browser cookies (`monarchmoney.com` $\rightarrow$ `sessionid` or authorization header) or from your saved Monarch session.
-                  </Description>
-                </Field>
+                {authStep === 'credentials' ? (
+                  <>
+                    <Field>
+                      <Label htmlFor="mm-email">Monarch Money Email</Label>
+                      <Input
+                        id="mm-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                      />
+                    </Field>
+                    <Field>
+                      <Label htmlFor="mm-password">Password</Label>
+                      <Input
+                        id="mm-password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Your Monarch Money password"
+                        autoComplete="current-password"
+                      />
+                      <Description>
+                        Credentials are sent directly to the Monarch Money API and are never stored.
+                      </Description>
+                    </Field>
+                  </>
+                ) : authStep === 'otp' ? (
+                  <Field>
+                    <Label htmlFor="mm-otp" className="flex items-center gap-2">
+                      <MailIcon className="size-4" />
+                      Email Verification Code
+                    </Label>
+                    <Input
+                      id="mm-otp"
+                      type="text"
+                      inputMode="numeric"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      placeholder="123456"
+                      maxLength={8}
+                    />
+                    <Description>
+                      Monarch Money sent a verification code to <strong>{email}</strong>. Enter it above to continue.
+                    </Description>
+                  </Field>
+                ) : (
+                  <Field>
+                    <Label htmlFor="mm-mfa">Authenticator Code (MFA)</Label>
+                    <Input
+                      id="mm-mfa"
+                      type="text"
+                      inputMode="numeric"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      placeholder="123456"
+                      maxLength={6}
+                    />
+                    <Description>Enter the 6-digit code from your authenticator app.</Description>
+                  </Field>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <Field>
@@ -307,11 +427,15 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
                   <div className="space-y-2 pt-6">
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <Checkbox checked={syncAccounts} onChange={setSyncAccounts} />
-                      Import Accounts & Balances
+                      Accounts &amp; Balances
                     </label>
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <Checkbox checked={syncExpenses} onChange={setSyncExpenses} />
-                      Import Spending as Expenses
+                      Spending as Expenses
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Checkbox checked={syncIncome} onChange={setSyncIncome} />
+                      Income Sources
                     </label>
                   </div>
                 </div>
@@ -340,18 +464,31 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
                   <Description>Exported from Monarch Money: Transactions $\rightarrow$ Export CSV</Description>
                 </Field>
 
-                <Field>
-                  <Label htmlFor="csvLookback">Spending Lookback Window</Label>
-                  <Select
-                    id="csvLookback"
-                    value={lookbackMonths}
-                    onChange={(e) => setLookbackMonths(Number(e.target.value))}
-                  >
-                    <option value={3}>3 Months</option>
-                    <option value={6}>6 Months (Recommended)</option>
-                    <option value={12}>12 Months</option>
-                  </Select>
-                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field>
+                    <Label htmlFor="csvLookback">Spending Lookback Window</Label>
+                    <Select
+                      id="csvLookback"
+                      value={lookbackMonths}
+                      onChange={(e) => setLookbackMonths(Number(e.target.value))}
+                    >
+                      <option value={3}>3 Months</option>
+                      <option value={6}>6 Months (Recommended)</option>
+                      <option value={12}>12 Months</option>
+                    </Select>
+                  </Field>
+
+                  <div className="space-y-2 pt-6">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Checkbox checked={syncExpenses} onChange={setSyncExpenses} />
+                      Spending as Expenses
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Checkbox checked={syncIncome} onChange={setSyncIncome} />
+                      Income Sources
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -368,7 +505,7 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
             {mappedAccounts.length > 0 && (
               <div className="space-y-3">
                 <h3 className="font-semibold text-sm uppercase tracking-wider text-zinc-500">
-                  Accounts & Debts ({mappedAccounts.filter((a) => a.included).length} of {mappedAccounts.length} selected)
+                  Accounts &amp; Debts ({mappedAccounts.filter((a) => a.included).length} of {mappedAccounts.length} selected)
                 </h3>
                 <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800">
                   {mappedAccounts.map((acc, idx) => (
@@ -462,6 +599,54 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
               </div>
             )}
 
+            {mappedIncome.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm uppercase tracking-wider text-zinc-500">
+                  Income Sources ({mappedIncome.filter((i) => i.included).length} of {mappedIncome.length} selected)
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Imported as monthly wage income. You can adjust type and withholding after import.
+                </p>
+                <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {mappedIncome.map((inc, idx) => (
+                    <div key={inc.id} className="p-3 flex items-center justify-between gap-3 text-sm">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <Checkbox
+                          checked={inc.included}
+                          onChange={(val) => {
+                            const updated = [...mappedIncome];
+                            updated[idx].included = val;
+                            setMappedIncome(updated);
+                          }}
+                        />
+                        <div className="truncate">
+                          <p className="font-medium truncate">{inc.categoryName}</p>
+                          <p className="text-xs text-zinc-500">
+                            {inc.transactionCount} transactions (${inc.totalEarned} total)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Monthly Avg:</span>
+                        <div className="w-24">
+                          <Input
+                            type="number"
+                            value={inc.monthlyAverage}
+                            onChange={(e) => {
+                              const updated = [...mappedIncome];
+                              updated[idx].monthlyAverage = parseFloat(e.target.value) || 0;
+                              setMappedIncome(updated);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {fetchError && (
               <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 dark:bg-red-950/40 rounded-lg border border-red-200 dark:border-red-900">
                 <ExclamationTriangleIcon className="size-5 shrink-0" />
@@ -483,13 +668,33 @@ export default function MonarchImportDialog({ onClose }: MonarchImportDialogProp
                 Back
               </Button>
             )}
+            {authStep !== 'credentials' && step === 'config' && tab === 'direct' && (
+              <Button
+                plain
+                onClick={() => {
+                  setAuthStep('credentials');
+                  setOtpCode('');
+                  setMfaCode('');
+                  setFetchError(null);
+                }}
+                disabled={isLoading}
+              >
+                Back
+              </Button>
+            )}
             {step === 'config' ? (
               <Button
                 color="rose"
                 onClick={tab === 'direct' ? handleFetchDirect : handleParseCsv}
                 disabled={isLoading}
               >
-                {isLoading ? 'Connecting...' : 'Preview Import'}
+                {isLoading
+                  ? 'Connecting...'
+                  : authStep === 'otp'
+                    ? 'Verify Code'
+                    : authStep === 'mfa'
+                      ? 'Verify MFA'
+                      : 'Preview Import'}
               </Button>
             ) : (
               <Button color="rose" onClick={handleApplyImport} disabled={isImporting}>

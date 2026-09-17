@@ -61,6 +61,15 @@ export interface MappedExpenseItem {
   included: boolean;
 }
 
+export interface MappedIncomeItem {
+  id: string;
+  categoryName: string;
+  monthlyAverage: number;
+  totalEarned: number;
+  transactionCount: number;
+  included: boolean;
+}
+
 /**
  * Maps Monarch account types & subtypes to Ignidash account types.
  */
@@ -196,6 +205,58 @@ export function aggregateMonarchTransactions(
         totalSpent: Math.round(stats.total * 100) / 100,
         transactionCount: stats.count,
         included: monthlyAverage >= 5, // Default include if at least $5/month
+      };
+    })
+    .sort((a, b) => b.monthlyAverage - a.monthlyAverage);
+}
+
+/**
+ * Aggregates Monarch income transactions by category and computes monthly averages.
+ * Only includes transactions in the "income" group type.
+ */
+export function aggregateMonarchIncome(
+  transactions: MonarchRawTransaction[],
+  lookbackMonths: number = 6
+): MappedIncomeItem[] {
+  const categoryStats: Record<string, { total: number; count: number }> = {};
+
+  // Keywords that indicate payroll / wages (most common income source)
+  const paycheckKeywords = ['paycheck', 'payroll', 'salary', 'wages', 'direct deposit'];
+
+  for (const txn of transactions) {
+    if (txn.hideFromReports) continue;
+
+    const groupType = txn.category?.group?.type?.toLowerCase();
+
+    // Only include income-type transactions
+    if (groupType !== 'income') continue;
+
+    const catName = txn.category?.name?.trim() || 'Income';
+    const absAmount = Math.abs(txn.amount);
+    if (absAmount <= 0) continue;
+
+    if (!categoryStats[catName]) {
+      categoryStats[catName] = { total: 0, count: 0 };
+    }
+    categoryStats[catName].total += absAmount;
+    categoryStats[catName].count += 1;
+  }
+
+  const months = Math.max(1, lookbackMonths);
+
+  return Object.entries(categoryStats)
+    .map(([name, stats]) => {
+      const monthlyAverage = Math.round((stats.total / months) * 100) / 100;
+      const lowerName = name.toLowerCase();
+      // Prefer including paycheck / primary income categories by default
+      const isLikelyPrimary = paycheckKeywords.some((kw) => lowerName.includes(kw));
+      return {
+        id: crypto.randomUUID(),
+        categoryName: name,
+        monthlyAverage,
+        totalEarned: Math.round(stats.total * 100) / 100,
+        transactionCount: stats.count,
+        included: isLikelyPrimary || monthlyAverage >= 100, // Include if paycheck-like or $100+/mo
       };
     })
     .sort((a, b) => b.monthlyAverage - a.monthlyAverage);
