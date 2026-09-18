@@ -52,7 +52,7 @@ export default function NumberInput<
     disabled,
   });
 
-  const handleValueChange = (values: NumberFormatValues) => onChange(values.value);
+  const handleValueChange = (values: NumberFormatValues) => onChange(values.floatValue ?? null);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (step === undefined || min === undefined || max === undefined) return;
 
