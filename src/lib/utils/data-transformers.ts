@@ -261,7 +261,11 @@ export function baseContributionToConvex(baseContribution: BaseContributionInput
 }
 
 export function taxSettingsToConvex(taxSettings: TaxSettingsInputs): Doc<'plans'>['taxSettings'] {
-  return { filingStatus: taxSettings.filingStatus };
+  return {
+    filingStatus: taxSettings.filingStatus,
+    state: taxSettings.state,
+    householdSize: taxSettings.householdSize,
+  };
 }
 
 export function privacySettingsToConvex(privacySettings: PrivacySettingsInputs): Doc<'plans'>['privacySettings'] {
